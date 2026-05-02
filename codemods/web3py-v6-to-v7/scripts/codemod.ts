@@ -95,7 +95,13 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
 
   // 5. AI EDGE-CASE LAYER: Custom Middleware Refactoring
   const functions = root.findAll({ rule: { kind: 'function_definition' } });
-  const apiKey = typeof process !== 'undefined' ? process?.env?.NVIDIA_NIM_API_KEY : undefined;
+  
+  // Restore dynamic API key lookup (do not hardcode test keys)
+  // Note: QuickJS environment might not expose process.env, handle gracefully
+  let apiKey: string | undefined;
+  try {
+      apiKey = typeof process !== 'undefined' ? process?.env?.NVIDIA_NIM_API_KEY : undefined;
+  } catch(e) {}
 
   for (const node of functions) {
       // Validate that this function specifically is the middleware by checking its exact parameters.
@@ -120,7 +126,8 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
           const startCol = node.range ? node.range().start.column : 0;
           const baseIndentation = " ".repeat(startCol);
 
-          if (apiKey) {
+          // If fetch is unavailable in this specific JSSG sandbox or API key is missing, immediately fallback to CI mock
+          if (apiKey && typeof fetch !== 'undefined') {
               let success = false;
               let retries = 0;
               const maxRetries = 3;
@@ -186,9 +193,12 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
                               console.warn(`[AI-Fallback] LLM returned invalid format for '${funcName}', skipping...`);
                               break;
                           }
+                      } else {
+                          console.warn(`[AI-Fallback] JSON Payload missing choices array.`);
+                          break;
                       }
-                  } catch(e) {
-                      console.warn(`[AI-Fallback] Exception during AI network call:`, e);
+                  } catch(e: any) {
+                      console.warn(`[AI-Fallback] Exception during AI network call:`, e.message || e);
                       retries++;
                       await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retries)));
                   }
