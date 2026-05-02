@@ -108,7 +108,6 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
       const paramsText = paramsNode.text();
       
       // Strict parameter matching to prevent false positives on outer wrapper functions
-      // We look for the presence of make_request and w3 in this specific function's signature
       if (paramsText.includes('make_request') && paramsText.includes('w3')) {
           
           // Context Injection: Extract the exact function name safely (avoids decorators)
@@ -118,7 +117,8 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
           
           // Formatting safety: Track base indentation to preserve Python AST integrity
           // @ts-ignore
-          const baseIndentation = node.range ? " ".repeat(node.range().start.column) : "";
+          const startCol = node.range ? node.range().start.column : 0;
+          const baseIndentation = " ".repeat(startCol);
 
           if (apiKey) {
               let success = false;
