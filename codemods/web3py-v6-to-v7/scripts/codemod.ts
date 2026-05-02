@@ -98,9 +98,18 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
   const apiKey = typeof process !== 'undefined' ? process?.env?.NVIDIA_NIM_API_KEY : undefined;
 
   for (const node of functions) {
-      const funcText = node.text();
+      // Validate that this function specifically is the middleware by checking its exact parameters.
+      // A web3 middleware function signature contains exactly two parameters commonly named 'make_request' and 'w3'
+      // We query the 'parameters' field of the function_definition node.
+      // @ts-ignore
+      const paramsNode = node.field('parameters');
+      if (!paramsNode) continue;
       
-      if (funcText.includes('(make_request, w3):') && !funcText.includes('Web3Middleware')) {
+      const paramsText = paramsNode.text();
+      
+      // Strict parameter matching to prevent false positives on outer wrapper functions
+      // We look for the presence of make_request and w3 in this specific function's signature
+      if (paramsText.includes('make_request') && paramsText.includes('w3')) {
           
           // Context Injection: Extract the exact function name safely (avoids decorators)
           // @ts-ignore
@@ -180,7 +189,8 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
           } else {
               // Dynamic Mock fallback for CI testing to prevent namespace collisions
               const pascalName = funcName.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1)).join('');
-              const mockedCode = `class ${pascalName}(Web3Middleware):\n${baseIndentation}    def request_processor(self, method, params):\n${baseIndentation}        print(f"Request: {method}")\n${baseIndentation}        return method, params`;
+              let mockedCode = `class ${pascalName}(Web3Middleware):\n${baseIndentation}    def request_processor(self, method, params):\n${baseIndentation}        print(f"Request: {method}")\n${baseIndentation}        return method, params`;
+              
               edits.push(node.replace(mockedCode));
           }
       }
