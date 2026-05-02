@@ -1,6 +1,8 @@
 schemaVersion: 1.0.0
+version: 1.0.0
 name: web3py-v6-to-v7
-engine: jssg
+engine: ast-grep
+language: python
 description: Deterministic Web3.py v6 -> v7 migration with an isolated NVIDIA NIM AI fallback for complex middleware class refactoring.
 tags:
   - web3py
@@ -10,3 +12,8 @@ tags:
 build:
   input: ./scripts/codemod.ts
   output: ./dist/index.cjs
+arguments:
+  - name: NVIDIA_NIM_API_KEY
+    description: (Optional) Provide your NVIDIA NIM API key to enable Llama 3 70B AI fallback for complex functional middleware refactoring.
+    kind: string
+    required: false
