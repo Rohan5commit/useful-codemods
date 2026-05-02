@@ -162,11 +162,18 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
                           const rawOutput = data.choices[0].message.content;
                           
                           let migratedCode = rawOutput;
-                          const codeBlockMatch = rawOutput.match(/```(?:python)?\n([\s\S]*?)```/);
-                          if (codeBlockMatch && codeBlockMatch[1]) {
-                              migratedCode = codeBlockMatch[1].trim();
+                          // Attempt to specifically find the python block first
+                          const pythonBlockMatch = rawOutput.match(/^[ \t]*```(?:python3?)\s*\n([\s\S]*?)^[ \t]*```/m);
+                          if (pythonBlockMatch && pythonBlockMatch[1]) {
+                              migratedCode = pythonBlockMatch[1].trim();
                           } else {
-                              migratedCode = migratedCode.trim();
+                              // Fallback: get the last code block (LLMs usually put the final code at the end)
+                              const allBlocks = [...rawOutput.matchAll(/^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```/gm)];
+                              if (allBlocks.length > 0) {
+                                  migratedCode = allBlocks[allBlocks.length - 1][1].trim();
+                              } else {
+                                  migratedCode = migratedCode.trim();
+                              }
                           }
                           
                           if (migratedCode.includes("class ")) {
