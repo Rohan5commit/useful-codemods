@@ -15,63 +15,82 @@ export const transform: Transform<Python> = async (rootWrapper: any) => {
     'ABIFunctionNotFound': 'ABIFunctionNotFound'
   };
 
-  const processImports = (query: string) => {
-      const imports = root.findAll(query);
+  const processImports = () => {
+      const imports = root.findAll({ rule: { kind: 'import_from_statement' } });
       for (const node of imports) {
           let text = node.text();
-          let modified = false;
-          for (const oldName in importRenames) {
-              if (text.includes(oldName)) {
-                  text = text.split(oldName).join(importRenames[oldName]);
+          if (text.startsWith('from web3')) {
+              let modified = false;
+              
+              // Handle general renames using word boundaries to prevent substring collision
+              for (const [oldName, newName] of Object.entries(importRenames)) {
+                  const regex = new RegExp(`\\b${oldName}\\b`, 'g');
+                  if (regex.test(text)) {
+                      text = text.replace(regex, newName);
+                      modified = true;
+                  }
+              }
+              
+              // Handle AttributeDict safely with word boundaries
+              const attrDictRegex = /,\s*\bAttributeDict\b|\bAttributeDict\b\s*,?\s*/g;
+              if (/\bAttributeDict\b/.test(text)) {
+                  text = text.replace(attrDictRegex, '');
+                  if (text.match(/import\s*(\(\s*\))?\s*$/)) {
+                      text = '';
+                  }
                   modified = true;
               }
-          }
-          if (text.includes('AttributeDict')) {
-              // We remove AttributeDict from imports entirely since it's deprecated and replaced by standard dict
-              text = text.replace(/,?\s*AttributeDict\s*,?/g, '').trim();
-              if (text.endsWith('import')) {
-                  text = ''; // Delete the whole line if empty
+              
+              if (modified) {
+                  edits.push(node.replace(text));
               }
-              modified = true;
-          }
-          if (modified) {
-              edits.push(node.replace(text));
           }
       }
   };
-  processImports('from web3.$MODULE import $$$IMPORTS');
-  processImports('from web3 import $$$IMPORTS');
+  processImports();
 
-  // 1.5 AttributeDict Usage
+  // 1.5 AttributeDict Usage (Instantiation)
   const dicts = root.findAll('AttributeDict($$$ARGS)');
   for (const node of dicts) {
       edits.push(node.replace(node.text().replace('AttributeDict', 'dict')));
   }
 
-  // 2. DETERMINISTIC: Provider Instantiation Updates
-  const ws1 = root.findAll('WebsocketProviderV2($$$ARGS)');
+  // 2. DETERMINISTIC: Provider Instantiation Updates (Using identifiers for multi-line support)
+  const ws1 = root.findAll({ rule: { kind: 'identifier', regex: '^WebsocketProviderV2$' } });
   for (const node of ws1) {
-      edits.push(node.replace(node.text().replace('WebsocketProviderV2', 'WebSocketProvider')));
+      // If it hasn't been changed by the import logic yet
+      if (node.text() === 'WebsocketProviderV2') {
+          edits.push(node.replace('WebSocketProvider'));
+      }
   }
   
-  const ws2 = root.findAll('AsyncWeb3.persistent_websocket($WS)');
+  const ws2 = root.findAll('AsyncWeb3.persistent_websocket');
   for (const node of ws2) {
-      edits.push(node.replace(node.text().replace('AsyncWeb3.persistent_websocket', 'WebSocketProvider')));
+      edits.push(node.replace('WebSocketProvider'));
   }
 
   // 3. DETERMINISTIC: WebSocket Namespace Transposition (.ws -> .socket)
-  const sockets = root.findAll('$W3.ws.$METHOD($$$ARGS)');
-  for (const node of sockets) {
-      const w3 = node.getMatch('W3')?.text();
-      const method = node.getMatch('METHOD')?.text();
-      const args = node.getMatch('$$$ARGS')?.text() || '';
-      edits.push(node.replace(`${w3}.socket.${method}(${args})`));
+  // We use `attribute` kind to catch both `w3.ws.timeout` and `w3.ws.process()`
+  const attributes = root.findAll({ rule: { kind: 'attribute' } });
+  for (const node of attributes) {
+      // @ts-ignore
+      const attrName = node.field('attribute')?.text();
+      if (attrName === 'ws') {
+          // @ts-ignore
+          const objectText = node.field('object')?.text();
+          if (objectText === 'w3' || objectText === 'web3' || objectText === 'self.w3' || objectText === 'self.web3') {
+              edits.push(node.replace(`${objectText}.socket`));
+          }
+      }
   }
 
   // 4. Exception Renames
-  const exceptions = root.findAll('except ABIEventFunctionNotFound as $VAR:');
-  for (const node of exceptions) {
-      edits.push(node.replace(`except ABIEventNotFound as ${node.getMatch('VAR')?.text()}:`));
+  // We globally replace the exception identifier to handle `except ABI...:`, `except (ABI..., ...):`, etc.
+  const exceptionIds = root.findAll({ rule: { kind: 'identifier', regex: '^ABIEventFunctionNotFound$' } });
+  for (const node of exceptionIds) {
+      if (node.text() === 'ABIEventFunctionNotFound') {
+          edits.push(node.replace('ABIEventNotFound'));
+      }
   }
 
   // 5. AI EDGE-CASE LAYER: Custom Middleware Refactoring
