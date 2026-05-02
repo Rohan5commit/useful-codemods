@@ -9,7 +9,6 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "@codemod.com/jssg-types": "catalog:",
     "typescript": "catalog:"
   }
 }

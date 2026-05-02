@@ -1,7 +1,7 @@
 // @ts-nocheck
-import type { Transform, Python } from '@codemod.com/jssg-types';
+import type { Codemod, Edit } from 'codemod:ast-grep';
 
-export const transform: Transform<Python> = async (rootWrapper: any) => {
+export const transform: Codemod = async (rootWrapper: any) => {
   const root = (rootWrapper as any).root();
   const edits: any[] = [];
   
